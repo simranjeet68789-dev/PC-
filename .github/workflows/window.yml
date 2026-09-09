@@ -1,0 +1,63 @@
+name: RDP - Tailscale Windows Fix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+
+    steps:
+      # 1. टेलस्केल का सही डायरेक्ट MSI/EXE लिन्क डाउनलोड और इंस्टॉल करना
+      - name: Download and Install Tailscale
+        shell: powershell
+        run: |
+          Write-Host "Downloading authentic Tailscale installer..."
+          # टेलस्केल का डायरेक्ट डाउनलोड URL (MSI या EXE स्टेबल वर्जन)
+          Invoke-WebRequest -Uri "https://tailscale.com" -OutFile "tailscale-setup.exe"
+          
+          Write-Host "Installing Tailscale silently..."
+          Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/S" -Wait
+
+      # 2. टेलस्केल कनेक्ट करना और RDP यूजर सेटअप
+      - name: Connect Tailscale and Setup RDP
+        shell: powershell
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          # टेलस्केल के पाथ को एन्वायरमेंट में सेट करना
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          Write-Host "Connecting to Tailscale network..."
+          tailscale up --authkey "$env:TAILSCALE_KEY" --accept-routes
+          
+          Write-Host "Enabling Windows Remote Desktop (RDP)..."
+          # RDP रजिस्ट्री सेटिंग्स इनेबल करना
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          # ऑटोमैटिक यूजर और स्ट्रॉन्ग पासवर्ड क्रिएशन
+          $username = "GitHubRDP"
+          $password = ConvertTo-SecureString "SecurePass@2026#Win" -AsPlainText -Force
+          
+          Write-Host "Creating RDP User..."
+          New-LocalUser -Name $username -Password $password -Description "Tailscale RDP User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          # आपके लिए ऑटोमैटिक IP और लॉगिन डिटेल्स स्क्रीन पर प्रिंट करना
+          Write-Host "=========================================="
+          Write-Host "🔥 LOGIN DETAILS 🔥"
+          Write-Host "Tailscale IP:"
+          tailscale ip -4
+          Write-Host "Username: python"
+          Write-Host "Password: 12345678Op*"
+          Write-Host "=========================================="
+
+      # 3. सर्वर को 6 घंटे तक लाइव रखना
+      - name: Keep Server Alive
+        shell: powershell
+        run: |
+          Write-Host "RDP Server is now live and waiting for connection..."
+          Start-Sleep -Seconds 21600
+          
