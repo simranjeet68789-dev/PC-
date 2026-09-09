@@ -1,0 +1,67 @@
+name: RDP - Tailscale Windows Official Work
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+
+    steps:
+      # 1. टेलस्केल का असली डायरेक्ट डाउनलोड लिंक (यह कभी फेल नहीं होगा)
+      - name: Install Tailscale Package
+        shell: powershell
+        run: |
+          Write-Host "Downloading Tailscale Installer via Windows Web Client..."
+          $url = "https://tailscale.com"
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $url -OutFile "tailscale-install.exe"
+          
+          Write-Host "Installing Tailscale in background..."
+          Start-Process -FilePath ".\tailscale-install.exe" -ArgumentList "/S" -Wait
+
+      # 2. टेलस्केल सर्विस स्टार्ट करना, कनेक्ट करना और RDP इनेबल करना
+      - name: Configure Tailscale and Enable RDP
+        shell: powershell
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          # टेलस्केल फोल्डर पाथ को सिस्टम एनवायरनमेंट में शामिल करना
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          Write-Host "Starting Tailscale Windows Service..."
+          Start-Service -Name "Tailscale" -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 5
+          
+          Write-Host "Connecting to your Tailscale Mesh Network..."
+          tailscale up --authkey "$env:TAILSCALE_KEY" --accept-routes --login-server https://tailscale.com
+          Start-Sleep -Seconds 5
+          
+          Write-Host "Configuring Remote Desktop Settings..."
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
+          
+          Write-Host "Setting Password for Built-in Administrator..."
+          # विंडोज की शर्तों को पूरा करने वाला मजबूत पासवर्ड सेट करना
+          $adminUser = [ADSI]"WinNT://localhost/Administrator,user"
+          $adminUser.SetPassword("PythonBoyz@2026#Win")
+          
+          # कनेक्शन डिटेल्स स्क्रीन पर प्रिंट करना
+          Write-Host "=========================================="
+          Write-Host "🔥 LOGIN DETAILS - CONNECT NOW 🔥"
+          Write-Host "Tailscale IP Address:"
+          tailscale ip -4
+          Write-Host "Username: Administrator"
+          Write-Host "Password: PythonBoyz@2026#Win"
+          Write-Host "=========================================="
+
+      # 3. सर्वर को चालू रखना (6 घंटे की लिमिट)
+      - name: Hold Connection Alive
+        shell: powershell
+        run: |
+          Write-Host "Your Windows RDP Server is successfully live!"
+          Write-Host "Do not close this log. Connect using your RDP client."
+          Start-Sleep -Seconds 21600
+          
