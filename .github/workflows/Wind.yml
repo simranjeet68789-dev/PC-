@@ -1,0 +1,77 @@
+name: RDP - Tailscale Windows Official Work
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+
+    steps:
+      # 1. टेलस्केल को बिना किसी एरर के डाउनलोड और साइलेंट इंस्टॉल करना
+      - name: Install Tailscale Package
+        shell: powershell
+        run: |
+          Write-Host "Downloading Tailscale Installer via Windows Web Client..."
+          # डायरेक्ट विंडोज MSI पैकेज का इस्तेमाल (यह कभी करप्ट नहीं होता)
+          $url = "https://tailscale.com"
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $url -OutFile "tailscale-install.exe"
+          
+          Write-Host "Installing Tailscale in background..."
+          Start-Process -FilePath ".\tailscale-install.exe" -ArgumentList "/S", "/v/qn" -Wait
+
+      # 2. टेलस्केल सर्विस स्टार्ट करना, कनेक्ट करना और RDP इनेबल करना
+      - name: Configure Tailscale and Enable RDP
+        shell: powershell
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          # टेलस्केल फोल्डर पाथ को सिस्टम एनवायरनमेंट में शामिल करना
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          Write-Host "Starting Tailscale Windows Service..."
+          # पक्का करना कि बैकग्राउंड सर्विस चालू हो चुकी है
+          Start-Service -Name "Tailscale" -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 5
+          
+          Write-Host "Connecting to your Tailscale Mesh Network..."
+          # टेलस्केल नेटवर्क से जुड़ना
+          tailscale up --authkey "$env:TAILSCALE_KEY" --accept-routes --login-server https://tailscale.com
+          Start-Sleep -Seconds 5
+          
+          Write-Host "Configuring Remote Desktop Settings..."
+          # विंडोज रजिस्ट्री में RDP ऑन करना
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          # फायरवॉल में पोर्ट 3389 (RDP) को ओपन करना
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
+          
+          Write-Host "Creating Strong RDP User Account..."
+          # नया लोकल यूजर और एक बिल्कुल मजबूत पासवर्ड बनाना जो विंडोज रिजेक्ट न करे
+          $username = "GitHubRDP"
+          $password = ConvertTo-SecureString "SecurePass@2026#Win" -AsPlainText -Force
+          
+          New-LocalUser -Name $username -Password $password -Description "Tailscale Remote Access User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          # कनेक्शन की सारी डिटेल्स स्क्रीन पर ऑटोमैटिक प्रिंट करना
+          Write-Host "=========================================="
+          Write-Host "🔥 LOGIN DETAILS - CONNECT NOW 🔥"
+          Write-Host "Tailscale IP Address:"
+          tailscale ip -4
+          Write-Host "Username: $username"
+          Write-Host "Password: SecurePass@2026#Win"
+          Write-Host "=========================================="
+
+      # 3. सर्वर को चालू रखना ताकि आप काम कर सकें (6 घंटे की लिमिट)
+      - name: Hold Connection Alive
+        shell: powershell
+        run: |
+          Write-Host "Your Windows RDP Server is successfully live!"
+          Write-Host "Do not close this log. Connect using your RDP client."
+          # 6 घंटे तक सर्वर को लाइव रखेगा
+          Start-Sleep -Seconds 21600
+          
