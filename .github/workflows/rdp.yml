@@ -1,0 +1,67 @@
+name: RDP - Self Hosted Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: self-hosted
+
+    steps:
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Set-Service TermService -StartupType Automatic
+          Start-Service TermService
+
+      - name: Create RDP account
+        shell: powershell
+        run: |
+          $user = "RDPUser"
+          $pass = ConvertTo-SecureString `
+            "${{ secrets.RDP_PASSWORD }}" `
+            -AsPlainText -Force
+
+          if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
+            Set-LocalUser -Name $user -Password $pass
+          } else {
+            New-LocalUser `
+              -Name $user `
+              -Password $pass `
+              -PasswordNeverExpires
+          }
+
+          Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member $user `
+            -ErrorAction SilentlyContinue
+
+      - name: Connect Tailscale
+        shell: powershell
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" `
+            --unattended=true
+
+      - name: Get Tailscale IP
+        shell: powershell
+        run: |
+          $ip = (& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4).Trim()
+
+          Write-Host "=============================="
+          Write-Host "RDP IP       : $ip"
+          Write-Host "RDP Port     : 3389"
+          Write-Host "RDP Username : RDPUser"
+          Write-Host "=============================="
+
+      - name: Test RDP
+        shell: powershell
+        run: |
+          Test-NetConnection localhost -Port 3389
