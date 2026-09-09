@@ -1,0 +1,27 @@
+- name: Install Tailscale
+  shell: powershell
+  run: |
+    $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+    $installerPath = "$env:TEMP\tailscale.msi"
+
+    Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+
+    Start-Process msiexec.exe `
+      -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" `
+      -Wait
+
+    Remove-Item $installerPath -Force
+
+- name: Connect Tailscale
+  shell: powershell
+  run: |
+    & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+      --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
+
+    Write-Host "Tailscale connected!"
+
+- name: Show Tailscale IP
+  shell: powershell
+  run: |
+    & "$env:ProgramFiles\Tailscale\tailscale.exe" status
+    & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
