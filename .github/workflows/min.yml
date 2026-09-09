@@ -1,0 +1,30 @@
+name: Tailscale Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $file = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest $url -OutFile $file
+          Start-Process msiexec.exe -ArgumentList "/i `"$file`" /quiet /norestart" -Wait
+
+      - name: Connect Tailscale
+        shell: powershell
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}"
+
+      - name: Show Tailscale status
+        shell: powershell
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" status
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
