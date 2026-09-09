@@ -1,0 +1,56 @@
+name: RDP - Tailscale Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+
+    steps:
+      # 1. टेलस्केल डाउनलोड और इंस्टॉल करना
+      - name: Download and Install Tailscale
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://tailscale.com" -OutFile "tailscale-setup.exe"
+          Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/S" -Wait
+
+      # 2. टेलस्केल को कनेक्ट करना और RDP यूजर बनाना
+      - name: Connect Tailscale and Setup RDP User
+        shell: powershell
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          # टेलस्केल पाथ को एन्वायरमेंट में जोड़ना
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          # टेलस्केल ऑथ की (Auth Key) से लॉग इन करना
+          tailscale up --authkey "$env:TAILSCALE_KEY" --accept-routes
+          
+          # RDP इनेबल करना
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          # RDP के लिए यूजर और मजबूत पासवर्ड बनाना
+          $username = "GitHubRDP"
+          $password = ConvertTo-SecureString "SecurePass@2026#Win" -AsPlainText -Force
+          
+          New-LocalUser -Name $username -Password $password -Description "Tailscale RDP User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          # टेलस्केल की ऑटोमैटिक IP स्क्रीन पर प्रिंट करना
+          Write-Host "=========================================="
+          Write-Host "Tailscale IP Connection Details:"
+          tailscale ip -4
+          Write-Host "Username: python"
+          Write-Host "Password: 12345678Op*"
+          Write-Host "=========================================="
+
+      # 3. सर्वर को चालू रखना (6 घंटे तक) ताकि कनेक्शन कट न हो
+      - name: Keep Server Alive
+        shell: powershell
+        run: |
+          Write-Host "RDP Server is running. You can connect now."
+          Start-Sleep -Seconds 21600
+          
